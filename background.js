@@ -303,15 +303,6 @@ function downloadFile() {
 // Initializing the Extension
 chrome.runtime.onInstalled.addListener(function() {
   chrome.storage.sync.set({slowMode: false, onWait: false, onExecution: false}, function() {});
-  chrome.declarativeContent.onPageChanged.removeRules(undefined, function() {
-    chrome.declarativeContent.onPageChanged.addRules([{
-      conditions: [new chrome.declarativeContent.PageStateMatcher({
-        // pageUrl: {hostEquals: 'esaj.tjsp.jus.br'}, // Active when host = esaj.tjsp.jus.br // Not implemented
-      })
-      ],
-      actions: [new chrome.declarativeContent.ShowPageAction()]
-    }]);
-  }); 
 });
 
 // Reset options and modes to default on Startup
