@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+  <meta charset="UTF-8">
+  <head>
+    <style>
+      #error {
+        color: red;
+      }
+      #espera {
+        text-align: center;
+      }
+      #loadingImage {
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      #loadingCaption {
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="divAcesso">
+      <a href="https://esaj.tjsp.jus.br/cjsg/consultaCompleta.do" target="_blank">Fonte: ESAJ</a>
+    </div>
+    <div id="divEspera" hidden>
+      <p id="espera"><b>Espere um pouco antes de pesquisar novamente.</b></p>
+    </div>
+    <div id="divPesquisa">
+      <p id="error" hidden><b>Preecha o campo abaixo.</b></p>
+      <label id="pesquisaLabel" for="pesquisa">Pesquisa Livre:</label>
+      <input id="pesquisa" type="text" required>
+      <button id="enviar" type="submit">Download</button><br>
+    </div>
+    <div id="divLoading" hidden>
+      <figure id="loadingFigure">
+        <figcaption id="loadingCaption">Carregando...</figcaption><br>
+        <img id="loadingImage" src="/images/loading32.gif" alt="Loading icon" style="width:32px;height:32px;">
+      </figure>
+    </div>
+    <div id="divDone" hidden>
+      <h1><b>Pronto!</b></h1>
+    </div>
+    <script src="popup.js" charset="UTF-8"></script>
+  </body>
+</html>
