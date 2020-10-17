@@ -74,7 +74,16 @@ function setDoneScreen() {
 // Changes to waiting screen if onWait is set
 chrome.storage.sync.get('onWait', function(data) {
   if (data.onWait) {
-    setWaitingScreen();
+    // Bug fix #2: resets wait mode if it was not correctly reset
+    chrome.storage.sync.get('lastWaitEnd', function(data) {
+      if (data.lastWaitEnd > Date.now()) {
+        console.log(`Wait mode is active. Please wait until ${data.lastWaitEnd}. Date Now: ${Date.now()}.`);
+        setWaitingScreen();
+      } else {
+        console.log(`Resetting onWait because it was incorrectly set. Date Wait Mode ended: ${data.lastWaitEnd}. Date Now: ${Date.now()}.`);
+        chrome.storage.sync.set({onWait: false}, function() {}); 
+      }
+    });
   }
 });
 

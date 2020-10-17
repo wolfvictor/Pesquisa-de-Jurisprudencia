@@ -53,15 +53,18 @@ function cleanForNextRun() {
   chrome.storage.sync.get('slowMode', function(data) {
     if (!data.slowMode) {
       chrome.storage.sync.set({onWait: true}, function() {
-        setTimeout(() => {
-          chrome.runtime.sendMessage('Waiting');
-        }, 5000);
+        let waitingTime = 45000;
         setTimeout(() => {
           chrome.storage.sync.set({onWait: false}, function() { 
             chrome.runtime.sendMessage('WaitComplete');
           });
-        }, 45000);
-      });      
+        }, waitingTime);
+        setTimeout(() => {
+          chrome.runtime.sendMessage('Waiting');
+        }, 5000);
+        // Bug fix #2: sets a datetime to confirm wait mode
+        chrome.storage.sync.set({lastWaitEnd: Date.now() + waitingTime }, function() {}); 
+      });     
     }
   });
 }
@@ -302,12 +305,12 @@ function downloadFile() {
 
 // Initializing the Extension
 chrome.runtime.onInstalled.addListener(function() {
-  chrome.storage.sync.set({slowMode: false, onWait: false, onExecution: false}, function() {});
+  chrome.storage.sync.set({slowMode: false, onWait: false, onExecution: false, lastWaitEnd: Date.UTC(0,0)}, function() {});
 });
 
 // Reset options and modes to default on Startup
 chrome.runtime.onStartup.addListener(function() {
-  chrome.storage.sync.set({slowMode: false, onWait: false, onExecution: false}, function() {});
+  chrome.storage.sync.set({slowMode: false, onWait: false, onExecution: false, lastWaitEnd: Date.UTC(0,0)}, function() {});
 });
 
 // Receives message with search content and performs first connection to the site
