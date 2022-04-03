@@ -22,7 +22,7 @@ Copyright 2022 Victor Wolf
 ****************/
 
 let divOptions = document.getElementById('divOptions');
-let divEspera = document.getElementById('divEspera');
+let divWait = document.getElementById('divWait');
 let checkboxInput = document.getElementById('checkboxInput');
 
 /**************
@@ -49,7 +49,7 @@ class optionsHelper {
   static setWaitingScreenIfChangeNotAllowed(condition) {
     if (!condition) {
       divOptions.setAttribute("hidden", true);
-      divEspera.removeAttribute("hidden");
+      divWait.removeAttribute("hidden");
     }
   }
 
@@ -96,13 +96,13 @@ checkboxInput.onclick = function() {
 chrome.runtime.onMessage.addListener(function(msg) {
   if (msg == 'Executing') {
     divOptions.setAttribute("hidden", true);
-    divEspera.removeAttribute("hidden");
+    divWait.removeAttribute("hidden");
   } else if (msg == 'Waiting') {
     divOptions.setAttribute("hidden", true);
-    divEspera.removeAttribute("hidden");
+    divWait.removeAttribute("hidden");
   } else if (msg == 'WaitComplete') {
     divOptions.removeAttribute("hidden");
-    divEspera.setAttribute("hidden", true);
+    divWait.setAttribute("hidden", true);
   }
 });
 
