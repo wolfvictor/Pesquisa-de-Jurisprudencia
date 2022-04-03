@@ -1,6 +1,6 @@
 {
   "name": "Pesquisa de Jurisprudência",
-  "version": "0.0.0.5",
+  "version": "0.0.0.6",
   "description": "Obtenha um arquivo csv com informações de jurisprudência",
   "homepage_url": "https://github.com/wolfvictor/Pesquisa-de-Jurisprudencia",
   "permissions": ["storage", "downloads", "https://esaj.tjsp.jus.br/", "alarms"],
