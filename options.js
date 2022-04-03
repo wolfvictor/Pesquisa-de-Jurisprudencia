@@ -12,7 +12,7 @@ FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more de
 You should have received a copy of the GNU General Public License along with 
 "Pesquisa de Jurisprudência".  If not, see <https://www.gnu.org/licenses/>.
 
-Copyright 2020 Victor Wolf
+Copyright 2022 Victor Wolf
 *****************************************************************************************/
 
 'use strict';
@@ -25,78 +25,71 @@ let divOptions = document.getElementById('divOptions');
 let divEspera = document.getElementById('divEspera');
 let checkboxInput = document.getElementById('checkboxInput');
 
-/****************
-////FUNCTIONS////
-****************/
+/**************
+////CLASSES////
+**************/
 
-// During execution and wait, mode cannot be changed. Passes argument true or false to the callback
-function isModeChangeAllowed(callback) {
-  chrome.storage.sync.get('onExecution', execution => {
-    chrome.storage.sync.get('onWait', wait => {
-      if (!wait.onWait && !execution.onExecution) {
-        callback(true);
-      } else {
-        callback(false);
-      }
+class optionsHelper {
+  static isModeChangeAllowed(callback) {
+    chrome.storage.sync.get('onExecution', execution => {
+      chrome.storage.sync.get('onWait', wait => {
+        if (!wait.onWait && !execution.onExecution) {
+          callback(true);
+        } else {
+          callback(false);
+        }
+      });
     });
-  });
-}
-
-// Retrieve slowMode value from storage and passes it to callback
-function getMode(callback) {
-  chrome.storage.sync.get('slowMode', data => callback(data.slowMode));
-}
-
-// Self-explanatory
-function setWaitingScreenIfChangeNotAllowed(condition) {
-  if (!condition) {
-    divOptions.setAttribute("hidden", true);
-    divEspera.removeAttribute("hidden");
   }
-}
 
-// Decides to set the checkmark on the box depending on the argument
-function checkTheBoxOrNot(condition) {
-  if (condition) {
-    checkboxInput.checked = true;
-  } else {
-    checkboxInput.checked = false;
+  static getMode(callback) {
+    chrome.storage.sync.get('slowMode', data => callback(data.slowMode));
   }
-}
-
-// Triggers the functions that will update the screen
-function UpdateScreen() {
-  isModeChangeAllowed(setWaitingScreenIfChangeNotAllowed);
-  getMode(checkTheBoxOrNot);
-}
-
-// If execution and wait allow, this function will later toggle the mode
-function setModeIfTrue(condition) {
-  if (condition) {
-    getMode(toggleMode);
+  
+  static setWaitingScreenIfChangeNotAllowed(condition) {
+    if (!condition) {
+      divOptions.setAttribute("hidden", true);
+      divEspera.removeAttribute("hidden");
+    }
   }
-}
 
-// Toggles the Mode: Updates the slowMode value (to be used when checkbox is clicked)
-function toggleMode(condition) {
-  if (condition) {
-    chrome.storage.sync.set({ slowMode: false }, UpdateScreen);
-  } else {
-    chrome.storage.sync.set({ slowMode: true }, UpdateScreen);
+  static checkTheBoxWhenOptionIsEnabled(condition) {
+    if (condition) {
+      checkboxInput.checked = true;
+    } else {
+      checkboxInput.checked = false;
+    }
   }
-  console.log('Mode toggled to ' + !condition);
+
+  static UpdateScreen() {
+    optionsHelper.isModeChangeAllowed(optionsHelper.setWaitingScreenIfChangeNotAllowed);
+    optionsHelper.getMode(optionsHelper.checkTheBoxWhenOptionIsEnabled);
+  }
+
+  static setModeIfTrue(condition) {
+    if (condition) {
+      optionsHelper.getMode(optionsHelper.toggleMode);
+    }
+  }
+
+  static toggleMode(condition) {
+    if (condition) {
+      chrome.storage.sync.set({ slowMode: false }, optionsHelper.UpdateScreen);
+    } else {
+      chrome.storage.sync.set({ slowMode: true }, optionsHelper.UpdateScreen);
+    }
+    console.log('Mode toggled to ' + !condition);
+  }
+
 }
 
 /***********
 ////MAIN////
 ***********/
 
-// Screen must be updated upon refresh
-UpdateScreen();
-
 // Sets actions to follow a checkbox click
 checkboxInput.onclick = function() {
-  isModeChangeAllowed(setModeIfTrue);  
+  optionsHelper.isModeChangeAllowed(optionsHelper.setModeIfTrue);  
 }
 
 // Changes the screen depending on the message received
@@ -112,3 +105,6 @@ chrome.runtime.onMessage.addListener(function(msg) {
     divEspera.setAttribute("hidden", true);
   }
 });
+
+// The screen must be updated upon refresh
+optionsHelper.UpdateScreen();

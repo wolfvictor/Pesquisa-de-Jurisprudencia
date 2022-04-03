@@ -12,7 +12,7 @@ FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more de
 You should have received a copy of the GNU General Public License along with 
 "Pesquisa de Jurisprudência".  If not, see <https://www.gnu.org/licenses/>.
 
-Copyright 2020 Victor Wolf
+Copyright 2022 Victor Wolf
 *****************************************************************************************/
 
 'use strict';
@@ -25,278 +25,347 @@ let maxPages = 250;
 let totalPages = 0;
 let requestsCompleted = 0;
 let requestsParsed = 0;
-let blob = new Blob([], {type: 'text/csv'});   
-let search = '';
+let csvFileContents = new Blob([
+  "\ufeff",
+  'Número do processo;Classe/Assunto;Relator(a);Comarca;Órgão Julgador;Data do Julgamento;Data de Publicação;Ementa\r\n'
+], {type: 'application/octet-stream'});  
+let searchQuery = '';
 let errorCount = 0;
 
-/****************
-////FUNCTIONS////
-****************/
+/**************
+////CLASSES////
+**************/
 
-// Receives fetch response and decides on how to proceed
-function handleFetchErrors(response) {
-  if (response.ok) {
-    return response.text();
-  } else {
-    chrome.runtime.sendMessage('Display:Conexão falhou (' + response.status + ').');
-    errorCount++;
-    return null;
+class tjspWebScraper {
+  static startScraping(searchQuery) {
+    tjspWebScraper.fetchFirstResultPage(searchQuery, tjspWebScraper.scrapingRoutine);
+  }
+
+  static scrapingRoutine(response) {
+    if (response) {
+      let totalHits = maxPages * 20;
+      let parsedTotalHits = response.match(/(id="nomeAba-A")(.*)(Acórdãos\()(.*)(\))(.*)/)[4]
+      try {
+        totalHits = parseInt(parsedTotalHits);
+      } catch (error) {
+        console.log('Could not parse "' + parsedTotalHits + '" into integer. ' + error + '.');
+      }
+      totalPages = Math.ceil(totalHits/20);
+    
+      if (totalHits) {
+        chrome.runtime.sendMessage('Display:Obtendo acórdãos (' + totalHits + ')...');
+      } else {
+        chrome.runtime.sendMessage('Display:A pesquisa não retornou resultados.');
+      }
+      
+      chrome.storage.sync.get('slowMode', function(data) {
+        if (data.slowMode) {
+          maxPages = 250;
+        } else {
+          maxPages = 50;
+        }
+    
+        for (let index = 1; index <= Math.min(maxPages,totalPages); index++) {
+            if (data.slowMode) {
+            setTimeout(tjspWebScraper.fetchSubsequentResultPage, (index + 1) * 1200, index, tjspWebScraper.parseResponse);
+          } else {
+            tjspWebScraper.fetchSubsequentResultPage(index, tjspWebScraper.parseResponse);
+          }
+        }
+      });
+    } else {
+      searchController.cleanForNextRun();
+    }    
+  }
+
+  static fetchFirstResultPage(searchQuery, callback) {
+    let uri = 'https://esaj.tjsp.jus.br/cjsg/resultadoCompleta.do';
+    let body = 'conversationId=&dados.buscaInteiroTeor='
+    + encodeURIComponent(searchQuery) 
+    + '&dados.pesquisarComSinonimos=S&dados.pesquisarComSinonimos=S&contadoragente=0&contadorMaioragente=0&contadorjuizProlator=0' 
+    + '&contadorMaiorjuizProlator=0&contadorcomarca=0&contadorMaiorcomarca=0&dados.origensSelecionadas=T&tipoDecisaoSelecionados=A' 
+    + '&dados.ordenarPor=dtPublicacao';
+
+    fetch(uri, {
+      'credentials':'include',
+      'headers':{'content-type':'application/x-www-form-urlencoded'},
+      'body': body,
+      'method':'POST'
+    })
+      .then(tjspWebScraper.handleFetchErrors)
+      .then(data => callback(data));
+  }
+
+  static fetchSubsequentResultPage(page, callback) {
+    let uri = 'https://esaj.tjsp.jus.br/cjsg/trocaDePagina.do?tipoDeDecisao=A&pagina=' + page;
+  
+    fetch(uri, {'credentials':'include'})
+      .then(tjspWebScraper.handleFetchErrors)
+      .then(data => callback(data));
+  }
+
+  static parseResponse(response) {
+    requestsCompleted++;
+    let maxReached = '';
+    if (Math.min(maxPages,totalPages) == maxPages) {
+      maxReached = '(Limite)'
+    }
+    chrome.runtime.sendMessage('Display:Página ' + requestsCompleted + ' de ' + Math.min(maxPages,totalPages) + maxReached + '.');
+  
+    if (response) {
+      let parsedResponse = tjspResponseParserHelper.parseResponse(response);
+      csvFileContents = new Blob([csvFileContents, parsedResponse], {type: 'application/octet-stream'});
+    }
+  
+    setTimeout(downloadController.waitBeforeDownload, 0);
+  }
+
+  static handleFetchErrors(response) {
+    if (response.ok) {
+      return response.text();
+    } else {
+      chrome.runtime.sendMessage('Display:Conexão falhou (' + response.status + ').');
+      errorCount++;
+      return null;
+    }
+  }
+  
+}
+
+class tjspResponseParserHelper {
+  parserOffset = 0;
+
+  static parseResponse(response) {
+    let HTML_Response = document.createElement('html');
+    HTML_Response.innerHTML = response;
+
+    let parsedData = new Blob([], {type: 'application/octet-stream'});
+
+    let HTML_ElementsToParse = HTML_Response.getElementsByClassName('fundocinza1');
+      
+    for (let HTML_ElementToParse of HTML_ElementsToParse) {
+      tjspResponseParserHelper.parserOffset = 0;
+
+      let id = tjspResponseParserHelper.extractId(HTML_ElementToParse);
+      let numeroProcesso = tjspResponseParserHelper.extractNumeroProcesso(HTML_ElementToParse, id);
+
+      tjspResponseParserHelper.parserOffset = 0;
+
+      let classe = tjspResponseParserHelper.extractClasse(HTML_ElementToParse, id);
+      let relator = tjspResponseParserHelper.extractRelator(HTML_ElementToParse, id);
+      let comarca = tjspResponseParserHelper.extractComarca(HTML_ElementToParse, id);
+      let orgaoJulgador = tjspResponseParserHelper.extractOrgaoJulgador(HTML_ElementToParse, id);
+      let dataJulgamento = tjspResponseParserHelper.extractDataJulgamento(HTML_ElementToParse, id);
+      let dataPublicacao = tjspResponseParserHelper.extractDataPublicacao(HTML_ElementToParse, id);
+      let ementa = tjspResponseParserHelper.extractEmenta(HTML_ElementToParse, id);
+  
+      parsedData = new Blob([
+        parsedData,
+        numeroProcesso,
+        classe,
+        relator,
+        comarca,
+        orgaoJulgador,
+        dataJulgamento,
+        dataPublicacao,
+        ementa
+      ], {type: 'application/octet-stream'});   
+    }
+    
+    return parsedData;
+  }
+
+  static extractEmenta(HTML_ElementToParse, id) {
+    let ementa = '\r\n';
+    try {
+      ementa = HTML_ElementToParse.getElementsByClassName('ementaClass2')[6 + tjspResponseParserHelper.parserOffset].textContent.replace(/.*Ementa:/, 'Ementa:').replace(/Ementa:.*Ementa:/s, '').replace(/Ementa:/g, '').replace(/;/g, ',').replace(/\n/g, '').trim() + '\r\n';
+      if (ementa.match(/Outros números:.*/i)) {
+        ementa = '\r\n';
+        ementa = HTML_ElementToParse.getElementsByClassName('ementaClass2')[7 + tjspResponseParserHelper.parserOffset].textContent.replace(/.*Ementa:/, 'Ementa:').replace(/Ementa:.*Ementa:/s, '').replace(/Ementa:/g, '').replace(/;/g, ',').replace(/\n/g, '').trim() + '\r\n';
+      }
+    } catch (error) {
+      console.log('Cannot get contents of Ementa for search result #' + id + '. ' + error + '.');
+      tjspResponseParserHelper.parserOffset++;
+    }
+    return ementa;
+  }
+
+  static extractDataPublicacao(HTML_ElementToParse, id) {
+    let dataPublicacao = ';';
+    try {
+      let text = HTML_ElementToParse.getElementsByClassName('ementaClass2')[5 + tjspResponseParserHelper.parserOffset].textContent;
+      if (text.match(/.*Data de publicação:.*/)) {
+        dataPublicacao = text.replace('Data de publicação:', '').trim() + ';';
+      } else {
+        tjspResponseParserHelper.parserOffset--;
+      }
+    } catch (error) {
+      console.log('Cannot get contents of orgaoJulgador for search result #' + id + '. ' + error + '.');
+      tjspResponseParserHelper.parserOffset++;
+    }
+    return dataPublicacao;
+  }
+
+  static extractDataJulgamento(HTML_ElementToParse, id) {
+    let dataJulgamento = ';';
+    try {
+      let text = HTML_ElementToParse.getElementsByClassName('ementaClass2')[4 + tjspResponseParserHelper.parserOffset].textContent;
+      if (text.match(/.*Data do julgamento:.*/)) {
+        dataJulgamento = text.replace('Data do julgamento:', '').trim() + ';';
+      } else {
+        tjspResponseParserHelper.parserOffset--;
+      }
+    } catch (error) {
+      console.log('Cannot get contents of orgaoJulgador for search result #' + id + '. ' + error + '.');
+      tjspResponseParserHelper.parserOffset++;
+    }
+    return dataJulgamento;
+  }
+
+  static extractOrgaoJulgador(HTML_ElementToParse, id) {
+    let orgaoJulgador = ';';
+    try {
+      let text = HTML_ElementToParse.getElementsByClassName('ementaClass2')[3 + tjspResponseParserHelper.parserOffset].textContent;
+      if (text.match(/.*Órgão julgador:.*/)) {
+        orgaoJulgador = text.replace('Órgão julgador:', '').trim() + ';';
+      } else {
+        tjspResponseParserHelper.parserOffset--;
+      }
+    } catch (error) {
+      console.log('Cannot get contents of orgaoJulgador for search result #' + id + '. ' + error + '.');
+      tjspResponseParserHelper.parserOffset++;
+    }
+    return orgaoJulgador;
+  }
+
+  static extractComarca(HTML_ElementToParse, id) {
+    let comarca = ';';
+    try {
+      let text = HTML_ElementToParse.getElementsByClassName('ementaClass2')[2 + tjspResponseParserHelper.parserOffset].textContent;
+      if (text.match(/.*Comarca:.*/)) {
+        comarca = text.replace('Comarca:', '').trim() + ';';
+      } else {
+        tjspResponseParserHelper.parserOffset--;
+      }
+    } catch (error) {
+      console.log('Cannot get contents of orgaoJulgador for search result #' + id + '. ' + error + '.');
+      tjspResponseParserHelper.parserOffset++;
+    }
+    return comarca;
+  }
+
+  static extractRelator(HTML_ElementToParse, id) {
+    let relator = ';';
+    try {
+      let text = HTML_ElementToParse.getElementsByClassName('ementaClass2')[1 + tjspResponseParserHelper.parserOffset].textContent;
+      if (text.match(/.*Relator\(a\):.*/)) {
+        relator = text.replace('Relator(a):', '').trim() + ';';
+      } else {
+        tjspResponseParserHelper.parserOffset--;
+      }
+    } catch (error) {
+      console.log('Cannot get contents of orgaoJulgador for search result #' + id + '. ' + error + '.');
+      tjspResponseParserHelper.parserOffset++;
+    }
+    return relator;
+  }
+
+  static extractClasse(HTML_ElementToParse, id) {
+    let classe = ';';
+    try {
+      let text = HTML_ElementToParse.getElementsByClassName('ementaClass2')[0 + tjspResponseParserHelper.parserOffset].textContent;
+      if (text.match(/.*Classe\/Assunto:.*/)) {
+        classe = text.replace('Classe/Assunto:', '').trim() + ';';
+      } else if (text.match(/.*Classe:.*/)) {
+        classe = text.replace('Classe:', '').trim() + ';';
+      } else {
+        tjspResponseParserHelper.parserOffset--;
+      }
+    } catch (error) {
+      console.log('Cannot get contents of orgaoJulgador for search result #' + id + '. ' + error + '.');
+      tjspResponseParserHelper.parserOffset++;
+    }
+    return classe;
+  }
+
+  static extractNumeroProcesso(HTML_ElementToParse, id) {
+    let numeroProcesso = ';';
+    try {
+      numeroProcesso = HTML_ElementToParse.getElementsByClassName('ementaClass')[1 + tjspResponseParserHelper.parserOffset].getElementsByClassName('esajLinkLogin downloadEmenta')[0].text.trim() + ';';
+    } catch (error1) {
+      try {
+        tjspResponseParserHelper.parserOffset--;
+        numeroProcesso = HTML_ElementToParse.getElementsByClassName('ementaClass')[1 + tjspResponseParserHelper.parserOffset].getElementsByClassName('esajLinkLogin downloadEmenta')[0].text.trim() + ';';
+      } catch (error2) {
+        console.log('Cannot get contents of numeroProcesso(2) for search result #' + id + '. ' + error2 + '.');
+      }
+      console.log('Cannot get contents of numeroProcesso(1) for search result #' + id + '. ' + error1 + '.');
+    }
+    return numeroProcesso;
+  }
+
+  static extractId(HTML_ElementToParse) {
+    let id = ';';
+    try {
+      id = HTML_ElementToParse.getElementsByClassName('ementaClass')[0 + tjspResponseParserHelper.parserOffset].textContent.replace('-', '').trim();
+    } catch (error) {
+      console.log('Cannot get contents of id. ' + error + '.');
+      tjspResponseParserHelper.parserOffset++;
+    }
+    return id;
   }
 }
 
-// Resets variables for next run and decides if wait is required
-function cleanForNextRun() {
-  requestsCompleted = 0;
-  requestsParsed = 0;
-  errorCount = 0;
-  chrome.storage.sync.set({onExecution: false}, function() {});
-  chrome.storage.sync.get('slowMode', function(data) {
-    if (!data.slowMode) {
-      chrome.storage.sync.set({onWait: true}, function() {
-        let waitingTime = 45000;
-        setTimeout(() => {
-          chrome.storage.sync.set({onWait: false}, function() { 
-            chrome.runtime.sendMessage('WaitComplete');
-          });
-        }, waitingTime);
-        setTimeout(() => {
-          chrome.runtime.sendMessage('Waiting');
-        }, 5000);
-        // Bug fix #2: sets a datetime to confirm wait mode
-        chrome.storage.sync.set({lastWaitEnd: Date.now() + waitingTime }, function() {}); 
-      });     
-    }
-  });
-}
-
-// Implements first connection to the site
-function fetchPrimeiraPesquisaESAJ(pesquisa, callback) {
-  let uri = 'https://esaj.tjsp.jus.br/cjsg/resultadoCompleta.do';
-  let body = 'conversationId=&dados.buscaInteiroTeor=' + encodeURIComponent(pesquisa) + '&dados.pesquisarComSinonimos=S&dados.pesquisarComSinonimos=S&contadoragente=0&contadorMaioragente=0&contadorjuizProlator=0&contadorMaiorjuizProlator=0&contadorcomarca=0&contadorMaiorcomarca=0&dados.origensSelecionadas=T&tipoDecisaoSelecionados=A&dados.ordenarPor=dtPublicacao';
-
-  fetch(uri, {
-    'credentials':'include',
-    'headers':{'content-type':'application/x-www-form-urlencoded'},
-    'body': body,
-    'method':'POST'
-  })
-    .then(handleFetchErrors)
-    .then(data => callback(data));
-}
-
-// Gets pages after first connection to the site has been made
-function fetchSegundaPesquisaESAJ(page, callback) {
-  let uri = 'https://esaj.tjsp.jus.br/cjsg/trocaDePagina.do?tipoDeDecisao=A&pagina=' + page;
-
-  fetch(uri, {'credentials':'include'})
-    .then(handleFetchErrors)
-    .then(data => callback(data));
-}
-
-// Gets results page by page
-function getAcordaos(response) {
-  if (response) {
-    let totalHits = maxPages * 20;
-    let parsedTotalHits = response.match(/(id="nomeAba-A")(.*)(Acórdãos\()(.*)(\))(.*)/)[4]
-    try {
-      totalHits = parseInt(parsedTotalHits);
-    } catch (error) {
-      console.log('Could not parse "' + parsedTotalHits + '" into integer. ' + error + '.');
-    }
-    totalPages = Math.ceil(totalHits/20);
-  
-    if (totalHits) {
-      chrome.runtime.sendMessage('Display:Obtendo acórdãos (' + totalHits + ')...');
-    } else {
-      chrome.runtime.sendMessage('Display:A pesquisa não retornou resultados.');
-    }
-    
+class searchController {
+  static cleanForNextRun() {
+    requestsCompleted = 0;
+    requestsParsed = 0;
+    errorCount = 0;
+    chrome.storage.sync.set({onExecution: false}, function() {});
     chrome.storage.sync.get('slowMode', function(data) {
-      if (data.slowMode) {
-        maxPages = 250;
-      } else {
-        maxPages = 50;
-      }
-  
-      for (let index = 1; index <= Math.min(maxPages,totalPages); index++) {
-          if (data.slowMode) {
-          setTimeout(fetchSegundaPesquisaESAJ, (index + 1) * 1200, index, parseResponse);
-        } else {
-          fetchSegundaPesquisaESAJ(index, parseResponse);
-        }
+      if (!data.slowMode) {
+        chrome.storage.sync.set({onWait: true}, function() {
+          let waitingTime = 45000;
+          setTimeout(() => {
+            chrome.storage.sync.set({onWait: false}, function() { 
+              chrome.runtime.sendMessage('WaitComplete');
+            });
+          }, waitingTime);
+          setTimeout(() => {
+            chrome.runtime.sendMessage('Waiting');
+          }, 5000);
+          // Bug fix #2: sets a datetime to confirm wait mode
+          chrome.storage.sync.set({lastWaitEnd: Date.now() + waitingTime }, function() {}); 
+        });     
       }
     });
-  } else {
-    cleanForNextRun();
   }
 }
 
-// Parses the response, prints the results and calls sendDoneMessage once all loops finished
-function parseResponse(response) {
-  requestsCompleted++;
-  let maxReached = '';
-  if (Math.min(maxPages,totalPages) == maxPages) {
-    maxReached = '(Limite)'
-  }
-  chrome.runtime.sendMessage('Display:Página ' + requestsCompleted + ' de ' + Math.min(maxPages,totalPages) + maxReached + '.');
-
-  if (response) {
-    let HTMLresponse = document.createElement('html');
-    HTMLresponse.innerHTML = response;
-    let elements = HTMLresponse.getElementsByClassName('fundocinza1');
-    
-    let lineToAppend = '';
-  
-    for (let element of elements) {
-      let offset = 0;
-
-      let id = ';';
-      try {
-        id = element.getElementsByClassName('ementaClass')[0 + offset].textContent.replace('-','').trim();
-      } catch (error) {
-        console.log('Cannot get contents of id. ' + error + '.');
-        offset++;
+class downloadController {
+  static waitBeforeDownload() {
+    requestsParsed++;
+    if (requestsParsed >= Math.min(maxPages,totalPages)) {
+      if (errorCount) {
+        console.log('Não foi possível obter ' + errorCount + ' das ' + Math.min(maxPages,totalPages) + ' páginas de resultados. O arquivo está incompleto.');
       }
-      
-      let numeroProcesso = ';';
-      try {
-        numeroProcesso = element.getElementsByClassName('ementaClass')[1 + offset].getElementsByClassName('esajLinkLogin downloadEmenta')[0].text.trim() + ';';
-      } catch (error1) {
-        try {
-          offset--;
-          numeroProcesso = element.getElementsByClassName('ementaClass')[1 + offset].getElementsByClassName('esajLinkLogin downloadEmenta')[0].text.trim() + ';';
-        } catch (error2) {
-          console.log('Cannot get contents of numeroProcesso(2) for search result #' + id + '. ' + error2 + '.');
-        }
-        console.log('Cannot get contents of numeroProcesso(1) for search result #' + id + '. ' + error1 + '.');
-      }
-
-      offset = 0;
-
-      let classe = ';';
-      try {
-        let text = element.getElementsByClassName('ementaClass2')[0 + offset].textContent;
-        if (text.match(/.*Classe\/Assunto:.*/)) {
-          classe = text.replace('Classe/Assunto:', '').trim() + ';';
-        } else if (text.match(/.*Classe:.*/)) {
-          classe = text.replace('Classe:', '').trim() + ';';
-        } else {
-          offset--;
-        }
-      } catch (error) {
-        console.log('Cannot get contents of orgaoJulgador for search result #' + id + '. ' + error + '.');
-        offset++;
-      }
-      
-      let relator = ';';
-      try {
-        let text = element.getElementsByClassName('ementaClass2')[1 + offset].textContent;
-        if (text.match(/.*Relator\(a\):.*/)) {
-          relator = text.replace('Relator(a):', '').trim() + ';';
-        } else {
-          offset--;
-        }
-      } catch (error) {
-        console.log('Cannot get contents of orgaoJulgador for search result #' + id + '. ' + error + '.');
-        offset++;
-      }
-      
-      let comarca = ';';
-      try {
-        let text = element.getElementsByClassName('ementaClass2')[2 + offset].textContent;
-        if (text.match(/.*Comarca:.*/)) {
-          comarca = text.replace('Comarca:', '').trim() + ';';
-        } else {
-          offset--;
-        }
-      } catch (error) {
-        console.log('Cannot get contents of orgaoJulgador for search result #' + id + '. ' + error + '.');
-        offset++;
-      }
-
-      let orgaoJulgador = ';';
-      try {
-        let text = element.getElementsByClassName('ementaClass2')[3 + offset].textContent;
-        if (text.match(/.*Órgão julgador:.*/)) {
-          orgaoJulgador = text.replace('Órgão julgador:', '').trim() + ';';
-        } else {
-          offset--;
-        }
-      } catch (error) {
-        console.log('Cannot get contents of orgaoJulgador for search result #' + id + '. ' + error + '.');
-        offset++;
-      }
-
-      let dataJulgamento = ';';
-      try {
-        let text = element.getElementsByClassName('ementaClass2')[4 + offset].textContent;
-        if (text.match(/.*Data do julgamento:.*/)) {
-          dataJulgamento = text.replace('Data do julgamento:', '').trim() + ';';
-        } else {
-          offset--;
-        }
-      } catch (error) {
-        console.log('Cannot get contents of orgaoJulgador for search result #' + id + '. ' + error + '.');
-        offset++;
-      }
-      
-      let dataPublicacao = ';';
-      try {
-        let text = element.getElementsByClassName('ementaClass2')[5 + offset].textContent;
-        if (text.match(/.*Data de publicação:.*/)) {
-          dataPublicacao = text.replace('Data de publicação:', '').trim() + ';';
-        } else {
-          offset--;
-        }
-      } catch (error) {
-        console.log('Cannot get contents of orgaoJulgador for search result #' + id + '. ' + error + '.');
-        offset++;
-      }
-
-      let ementa = '\r\n';
-      try {
-        ementa = element.getElementsByClassName('ementaClass2')[6 + offset].textContent.replace(/.*Ementa:/,'Ementa:').replace(/Ementa:.*Ementa:/s, '').replace(/Ementa:/g, '').replace(/;/g,',').replace(/\n/g,'').trim() + '\r\n';
-        if (ementa.match(/Outros números:.*/i)) {
-          ementa = '\r\n';
-          ementa = element.getElementsByClassName('ementaClass2')[7 + offset].textContent.replace(/.*Ementa:/,'Ementa:').replace(/Ementa:.*Ementa:/s, '').replace(/Ementa:/g, '').replace(/;/g,',').replace(/\n/g,'').trim() + '\r\n';
-        }
-      } catch (error) {
-        console.log('Cannot get contents of Ementa for search result #' + id + '. ' + error + '.');
-        offset++;
-      }
-  
-      blob = new Blob([blob, numeroProcesso, classe, relator, comarca, orgaoJulgador, dataJulgamento, dataPublicacao, ementa], {type: 'application/octet-stream'});   
+      downloadController.downloadFile();
+      chrome.runtime.sendMessage('Done');
+      searchController.cleanForNextRun();
     }
   }
 
-  setTimeout(waitBeforeDownload, 0);
-
-}
-
-// Counts parsed requests until limit is reached, then calls downloadFile.
-function waitBeforeDownload() {
-  requestsParsed++;
-  if (requestsParsed >= Math.min(maxPages,totalPages)) {
-    if (errorCount) {
-      console.log('Não foi possível obter ' + errorCount + ' das ' + Math.min(maxPages,totalPages) + ' páginas de resultados. O arquivo está incompleto.');
-    }
-    downloadFile();
-    chrome.runtime.sendMessage('Done');
-    cleanForNextRun();
+  static downloadFile() {
+    let csvFileURL = URL.createObjectURL(csvFileContents);
+    var currentdate = new Date();
+    var filename = currentdate.getFullYear() + '-' + ("0" + (currentdate.getMonth() + 1)).slice(-2) + '-' + ("0" + (currentdate.getDate())).slice(-2) + '-'
+      + currentdate.getHours() + currentdate.getMinutes() + currentdate.getSeconds() + ('' + currentdate.getMilliseconds()).slice(0, 1) + '-'
+      + encodeURIComponent(searchQuery) + '.csv';
+    chrome.downloads.download({
+      url: csvFileURL,
+      filename: filename
+    });
   }
-}
-
-// Prompts user to download file. File (blob) is reset in the end.
-function downloadFile() {
-  let blobUrl = URL.createObjectURL(blob);
-  var currentdate = new Date();
-  var filename = currentdate.getFullYear() + '-' + ("0" + (currentdate.getMonth() + 1)).slice(-2) + '-' + ("0" + (currentdate.getDate())).slice(-2) + '-'
-    + currentdate.getHours() + currentdate.getMinutes() + currentdate.getSeconds() + ('' + currentdate.getMilliseconds()).slice(0, 1) + '-'
-    + encodeURIComponent(search) + '.csv';
-  chrome.downloads.download({
-    url: blobUrl,
-    filename: filename
-  });
 }
 
 /***********
@@ -319,10 +388,10 @@ chrome.runtime.onMessage.addListener(function(msg) {
     chrome.storage.sync.set({onExecution: true}, function() {
       chrome.runtime.sendMessage('Executing');
     });
-    search = msg.replace(/Search:/,'');
-    blob = new Blob(["\ufeff", 'Número do processo;Classe/Assunto;Relator(a);Comarca;Órgão Julgador;Data do Julgamento;Data de Publicação;Ementa\r\n'], {type: 'application/octet-stream'});
+    searchQuery = msg.replace(/Search:/,'');
     chrome.runtime.sendMessage('Display:Conectando...');
-    fetchPrimeiraPesquisaESAJ(search, getAcordaos);
+
+    tjspWebScraper.startScraping(searchQuery);
   }
 });
 

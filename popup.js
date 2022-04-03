@@ -12,7 +12,7 @@ FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more de
 You should have received a copy of the GNU General Public License along with 
 "Pesquisa de Jurisprudência".  If not, see <https://www.gnu.org/licenses/>.
 
-Copyright 2020 Victor Wolf
+Copyright 2022 Victor Wolf
 *****************************************************************************************/
 
 'use strict';
@@ -31,106 +31,113 @@ let errorMessage = document.getElementById('error');
 let button = document.getElementById('enviar');
 let loadingCaption = document.getElementById('loadingCaption');
 
-/****************
-////FUNCTIONS////
-****************/
+/**************
+////CLASSES////
+**************/
 
-function setLoadingScreen() {
-  divEspera.setAttribute("hidden", true);
-  divAcesso.setAttribute("hidden", true);
-  divPesquisa.setAttribute("hidden", true);
-  divDone.setAttribute("hidden", true);
-  divLoading.removeAttribute("hidden");
-}
+class popUpHelper {
+  static setLoadingScreen() {
+    divEspera.setAttribute("hidden", true);
+    divAcesso.setAttribute("hidden", true);
+    divPesquisa.setAttribute("hidden", true);
+    divDone.setAttribute("hidden", true);
+    divLoading.removeAttribute("hidden");
+  }
 
-function setWaitingScreen() {
-  divAcesso.setAttribute("hidden", true);
-  divPesquisa.setAttribute("hidden", true);
-  divDone.setAttribute("hidden", true);
-  divLoading.setAttribute("hidden", true);
-  divEspera.removeAttribute("hidden");
-}
+  static setWaitingScreen() {
+    divAcesso.setAttribute("hidden", true);
+    divPesquisa.setAttribute("hidden", true);
+    divDone.setAttribute("hidden", true);
+    divLoading.setAttribute("hidden", true);
+    divEspera.removeAttribute("hidden");
+  }
 
-function setSearchScreen() {
-  divEspera.setAttribute("hidden", true);
-  divDone.setAttribute("hidden", true);
-  divLoading.setAttribute("hidden", true);
-  divAcesso.removeAttribute("hidden");
-  divPesquisa.removeAttribute("hidden");
-}
+  static setSearchScreen() {
+    divEspera.setAttribute("hidden", true);
+    divDone.setAttribute("hidden", true);
+    divLoading.setAttribute("hidden", true);
+    divAcesso.removeAttribute("hidden");
+    divPesquisa.removeAttribute("hidden");
+  }
 
-function setDoneScreen() {
-  divEspera.setAttribute("hidden", true);
-  divAcesso.setAttribute("hidden", true);
-  divPesquisa.setAttribute("hidden", true);
-  divLoading.setAttribute("hidden", true);
-  divDone.removeAttribute("hidden");
+  static setDoneScreen() {
+    divEspera.setAttribute("hidden", true);
+    divAcesso.setAttribute("hidden", true);
+    divPesquisa.setAttribute("hidden", true);
+    divLoading.setAttribute("hidden", true);
+    divDone.removeAttribute("hidden");
+  }
+
+  static setWaitingScreenIfOnWait() {
+    chrome.storage.sync.get('onWait', function(data) {
+      if (data.onWait) {
+        // Bug fix #2: resets wait mode if it was not correctly reset
+        chrome.storage.sync.get('lastWaitEnd', function(data) {
+          if (data.lastWaitEnd > Date.now()) {
+            console.log(`Wait mode is active. Please wait until ${data.lastWaitEnd}. Date Now: ${Date.now()}.`);
+            popUpHelper.setWaitingScreen();
+          } else {
+            console.log(`Resetting onWait because it was incorrectly set. Date Wait Mode ended: ${data.lastWaitEnd}. Date Now: ${Date.now()}.`);
+            chrome.storage.sync.set({onWait: false}, function() {}); 
+          }
+        });
+      }
+    });
+  }
+
+  static setLoadingScreenIfOnExecution() {
+    chrome.storage.sync.get('onExecution', function(data) {
+      if (data.onExecution) {
+        popUpHelper.setLoadingScreen();
+      }
+    });        
+  }
 }
 
 /***********
 ////MAIN////
 ***********/
 
-// Changes to waiting screen if onWait is set
-chrome.storage.sync.get('onWait', function(data) {
-  if (data.onWait) {
-    // Bug fix #2: resets wait mode if it was not correctly reset
-    chrome.storage.sync.get('lastWaitEnd', function(data) {
-      if (data.lastWaitEnd > Date.now()) {
-        console.log(`Wait mode is active. Please wait until ${data.lastWaitEnd}. Date Now: ${Date.now()}.`);
-        setWaitingScreen();
-      } else {
-        console.log(`Resetting onWait because it was incorrectly set. Date Wait Mode ended: ${data.lastWaitEnd}. Date Now: ${Date.now()}.`);
-        chrome.storage.sync.set({onWait: false}, function() {}); 
-      }
-    });
-  }
-});
-
-// Changes to loading screen if onExecution is set
-chrome.storage.sync.get('onExecution', function(data) {
-  if (data.onExecution) {
-    setLoadingScreen();
-  }
-});
-
-// Focus on the search field as soon as the user opens the popup page
-pesquisa.focus();
-
-// Enter on search field should also act as if button has been pressed
-pesquisa.addEventListener("keyup", function(event) {
-  if (event.keyCode === 13) {
-    event.preventDefault();
-    button.click();
-  }
-});
-
 // When button is pressed, send the search query to the background script
 button.onclick = function (element) {
   if (pesquisa.value) {
     chrome.runtime.sendMessage('Search:' + pesquisa.value);
-    setLoadingScreen();
+    popUpHelper.setLoadingScreen();
   } else {
     errorMessage.removeAttribute("hidden");
   }
 };
+
+// Enter on search field should also act as if button has been pressed
+pesquisa.addEventListener("keyup", function(event) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    button.click();
+  }
+});
 
 // Display messages to the user according to the current background step
 chrome.runtime.onMessage.addListener(function(msg) {
   if (msg.match('Display:A pesquisa não retornou resultados.')) {
     loadingCaption.innerHTML = msg.replace(/Display:/,'');
     setTimeout(() => {
-      setSearchScreen();
+      popUpHelper.setSearchScreen();
     }, 3000);
   } else if (msg.match(/Display:/)) {
-    setLoadingScreen();
+    popUpHelper.setLoadingScreen();
     loadingCaption.innerHTML = msg.replace(/Display:/,'');
   } else if (msg == 'Done') {
-    setDoneScreen();
+    popUpHelper.setDoneScreen();
   } else if (msg == 'Waiting') {
-    setWaitingScreen();
+    popUpHelper.setWaitingScreen();
   } else if (msg == 'WaitComplete') {
     pesquisa.value = '';
-    setSearchScreen();
+    popUpHelper.setSearchScreen();
   }
 });
+
+popUpHelper.setWaitingScreenIfOnWait()
+popUpHelper.setLoadingScreenIfOnExecution()
+
+// Focus on the search field as soon as the user opens the popup page
+pesquisa.focus();
