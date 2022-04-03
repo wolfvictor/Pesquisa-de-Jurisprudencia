@@ -67,11 +67,25 @@ class tjspWebScraper {
     
         for (let index = 1; index <= Math.min(maxPages,totalPages); index++) {
             if (data.slowMode) {
-            setTimeout(tjspWebScraper.fetchSubsequentResultPage, (index + 1) * 1200, index, tjspWebScraper.parseResponse);
+              let currentBatchNumber = Math.ceil(index / 50);
+              if (index <= 50) {
+                tjspWebScraper.fetchSubsequentResultPage(index, tjspWebScraper.parseResponse);
+              } 
+              else {
+                let isNewBatch = Math.ceil(index / 50) > Math.ceil((index - 1) / 50)
+                if (isNewBatch) {
+                  let waitTimeInMinutes = Math.ceil(index / 50) - 1;
+                  chrome.alarms.create(`SlowModeDelay${currentBatchNumber}`, { delayInMinutes: waitTimeInMinutes });
+                  console.log(`Scheduled ${waitTimeInMinutes}-minute alarm for batch ${currentBatchNumber} on index ${index} due to Slow Mode.`);
+                }
+
+              }
+
           } else {
             tjspWebScraper.fetchSubsequentResultPage(index, tjspWebScraper.parseResponse);
           }
         }
+
       });
     } else {
       searchController.cleanForNextRun();
@@ -92,19 +106,21 @@ class tjspWebScraper {
       'body': body,
       'method':'POST'
     })
-      .then(tjspWebScraper.handleFetchErrors)
-      .then(data => callback(data));
+      .then(tjspWebScraper.handleFetchBadResponses)
+      .then(data => callback(data))
+      .catch(tjspWebScraper.handleFetchExceptions);
   }
 
   static fetchSubsequentResultPage(page, callback) {
     let uri = 'https://esaj.tjsp.jus.br/cjsg/trocaDePagina.do?tipoDeDecisao=A&pagina=' + page;
   
     fetch(uri, {'credentials':'include'})
-      .then(tjspWebScraper.handleFetchErrors)
-      .then(data => callback(data));
+      .then(tjspWebScraper.handleFetchBadResponses)
+      .then(data => callback(data, downloadController.InitiateDownloadIfReady))
+      .catch(tjspWebScraper.handleFetchExceptions);
   }
 
-  static parseResponse(response) {
+  static parseResponse(response, callback) {
     requestsCompleted++;
     let maxReached = '';
     if (Math.min(maxPages,totalPages) == maxPages) {
@@ -117,17 +133,24 @@ class tjspWebScraper {
       csvFileContents = new Blob([csvFileContents, parsedResponse], {type: 'application/octet-stream'});
     }
   
-    setTimeout(downloadController.waitBeforeDownload, 0);
+    requestsParsed++;
+
+    callback();
   }
 
-  static handleFetchErrors(response) {
+  static handleFetchBadResponses(response) {
     if (response.ok) {
       return response.text();
     } else {
-      chrome.runtime.sendMessage('Display:Conexão falhou (' + response.status + ').');
+      chrome.runtime.sendMessage(`Display:A conexão falhou ('${response.status}').`);
       errorCount++;
       return null;
     }
+  }
+
+  static handleFetchExceptions(error) {
+    chrome.runtime.sendMessage(`Display:A conexão falhou. ${error}`);
+    errorCount++;
   }
   
 }
@@ -322,35 +345,24 @@ class searchController {
     requestsParsed = 0;
     errorCount = 0;
     chrome.storage.sync.set({onExecution: false}, function() {});
-    chrome.storage.sync.get('slowMode', function(data) {
-      if (!data.slowMode) {
-        chrome.storage.sync.set({onWait: true}, function() {
-          let waitingTime = 45000;
-          setTimeout(() => {
-            chrome.storage.sync.set({onWait: false}, function() { 
-              chrome.runtime.sendMessage('WaitComplete');
-            });
-          }, waitingTime);
-          setTimeout(() => {
-            chrome.runtime.sendMessage('Waiting');
-          }, 5000);
-          // Bug fix #2: sets a datetime to confirm wait mode
-          chrome.storage.sync.set({lastWaitEnd: Date.now() + waitingTime }, function() {}); 
-        });     
-      }
-    });
+    chrome.storage.sync.set({onWait: true}, function() {
+      let waitTimeInMinutes = 1;
+      chrome.alarms.create("WaitForNextRun", { delayInMinutes: waitTimeInMinutes });
+      chrome.runtime.sendMessage('Waiting');
+
+      // Bug fix #2: sets a datetime to confirm wait mode
+      chrome.storage.sync.set({lastWaitEnd: Date.now() + waitTimeInMinutes * 60 * 1000 }, function() {}); 
+    });     
   }
 }
 
 class downloadController {
-  static waitBeforeDownload() {
-    requestsParsed++;
+  static InitiateDownloadIfReady() {
     if (requestsParsed >= Math.min(maxPages,totalPages)) {
       if (errorCount) {
         console.log('Não foi possível obter ' + errorCount + ' das ' + Math.min(maxPages,totalPages) + ' páginas de resultados. O arquivo está incompleto.');
       }
       downloadController.downloadFile();
-      chrome.runtime.sendMessage('Done');
       searchController.cleanForNextRun();
     }
   }
@@ -395,3 +407,16 @@ chrome.runtime.onMessage.addListener(function(msg) {
   }
 });
 
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name == "WaitForNextRun") {
+    chrome.storage.sync.set({onWait: false}, function() { 
+      chrome.runtime.sendMessage('WaitComplete');
+    });
+  }
+  else if (alarm.name.match(/SlowModeDelay/)) {
+    let batchNumber = parseInt(alarm.name.replace(/SlowModeDelay/,''));
+    for (let index = (batchNumber * 50) - 49; index <= (batchNumber * 50); index++) {
+      tjspWebScraper.fetchSubsequentResultPage(index, tjspWebScraper.parseResponse);
+    }
+  }
+});
