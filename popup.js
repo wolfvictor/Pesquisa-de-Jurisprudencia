@@ -21,14 +21,15 @@ Copyright 2022 Victor Wolf
 ////VARIABLES////
 ****************/
 
-let divAcesso = document.getElementById('divAcesso');
-let divEspera = document.getElementById('divEspera');
-let divPesquisa = document.getElementById('divPesquisa');
+let divSearchTarget = document.getElementById('divSearchTarget');
+let divWait = document.getElementById('divWait');
+let waitMessage = document.getElementById('waitMessage');
+let divSearch = document.getElementById('divSearch');
 let divLoading = document.getElementById('divLoading');
-let divDone = document.getElementById('divDone');
-let pesquisa = document.getElementById('pesquisa');
-let errorMessage = document.getElementById('error');
-let button = document.getElementById('enviar');
+let searchQueryInput = document.getElementById('searchQueryInput');
+let searchWarning = document.getElementById('searchWarning');
+let errorMessage = document.getElementById('errorMessage');
+let downloadButton = document.getElementById('downloadButton');
 let loadingCaption = document.getElementById('loadingCaption');
 
 /**************
@@ -37,35 +38,55 @@ let loadingCaption = document.getElementById('loadingCaption');
 
 class popUpHelper {
   static setLoadingScreen() {
-    divEspera.setAttribute("hidden", true);
-    divAcesso.setAttribute("hidden", true);
-    divPesquisa.setAttribute("hidden", true);
-    divDone.setAttribute("hidden", true);
+    divWait.setAttribute("hidden", true);
+    divSearchTarget.setAttribute("hidden", true);
+    divSearch.setAttribute("hidden", true);
     divLoading.removeAttribute("hidden");
+    loadingCaption.innerHTML = "Carregando...";
+  }
+
+  static setLoadingScreenForSlowMode() {
+    divWait.setAttribute("hidden", true);
+    divSearchTarget.setAttribute("hidden", true);
+    divSearch.setAttribute("hidden", true);
+    divLoading.removeAttribute("hidden");
+    loadingCaption.innerHTML = "Carregando... espera de até 60 segundos para a próxima batelada (modo lento ativado).";
   }
 
   static setWaitingScreen() {
-    divAcesso.setAttribute("hidden", true);
-    divPesquisa.setAttribute("hidden", true);
-    divDone.setAttribute("hidden", true);
+    divSearchTarget.setAttribute("hidden", true);
+    divSearch.setAttribute("hidden", true);
     divLoading.setAttribute("hidden", true);
-    divEspera.removeAttribute("hidden");
+    divWait.removeAttribute("hidden");
+    popUpHelper.setWaitingScreenWithWaitTime();
   }
 
-  static setSearchScreen() {
-    divEspera.setAttribute("hidden", true);
-    divDone.setAttribute("hidden", true);
-    divLoading.setAttribute("hidden", true);
-    divAcesso.removeAttribute("hidden");
-    divPesquisa.removeAttribute("hidden");
+  static setWaitingScreenWithWaitTime() {
+    chrome.storage.sync.get('lastWaitEnd', function(data) {
+      divSearchTarget.setAttribute("hidden", true);
+      divSearch.setAttribute("hidden", true);
+      divLoading.setAttribute("hidden", true);
+      waitMessage.innerHTML = `Pronto! Espere um pouco antes de pesquisar novamente. Restam ${(data.lastWaitEnd - Date.now())/1000} segundos.`;
+      divWait.removeAttribute("hidden");
+    });
   }
 
-  static setDoneScreen() {
-    divEspera.setAttribute("hidden", true);
-    divAcesso.setAttribute("hidden", true);
-    divPesquisa.setAttribute("hidden", true);
+  static setSearchScreenWithoutWarning() {
+    divWait.setAttribute("hidden", true);
     divLoading.setAttribute("hidden", true);
-    divDone.removeAttribute("hidden");
+    divSearchTarget.removeAttribute("hidden");
+    divSearch.removeAttribute("hidden");
+    searchWarning.innerText = "";
+    searchWarning.setAttribute("hidden", true);
+  }
+
+  static setSearchScreenWithWarning(warningText) {
+    divWait.setAttribute("hidden", true);
+    divLoading.setAttribute("hidden", true);
+    divSearchTarget.removeAttribute("hidden");
+    divSearch.removeAttribute("hidden");
+    searchWarning.innerText = warningText;
+    searchWarning.removeAttribute("hidden");
   }
 
   static setWaitingScreenIfOnWait() {
@@ -88,9 +109,16 @@ class popUpHelper {
   static setLoadingScreenIfOnExecution() {
     chrome.storage.sync.get('onExecution', function(data) {
       if (data.onExecution) {
-        popUpHelper.setLoadingScreen();
+        chrome.storage.sync.get('slowMode', function(data) {
+          if (data.slowMode) {
+                popUpHelper.setLoadingScreenForSlowMode();
+          }
+          else {
+            popUpHelper.setLoadingScreen();
+          }
+        });    
       }
-    });        
+    });
   }
 }
 
@@ -99,9 +127,9 @@ class popUpHelper {
 ***********/
 
 // When button is pressed, send the search query to the background script
-button.onclick = function (element) {
-  if (pesquisa.value) {
-    chrome.runtime.sendMessage('Search:' + pesquisa.value);
+downloadButton.onclick = function (element) {
+  if (searchQueryInput.value) {
+    chrome.runtime.sendMessage('Search:' + searchQueryInput.value);
     popUpHelper.setLoadingScreen();
   } else {
     errorMessage.removeAttribute("hidden");
@@ -109,30 +137,28 @@ button.onclick = function (element) {
 };
 
 // Enter on search field should also act as if button has been pressed
-pesquisa.addEventListener("keyup", function(event) {
+searchQueryInput.addEventListener("keyup", function(event) {
   if (event.key === 'Enter') {
     event.preventDefault();
-    button.click();
+    downloadButton.click();
   }
 });
 
 // Display messages to the user according to the current background step
 chrome.runtime.onMessage.addListener(function(msg) {
   if (msg.match('Display:A pesquisa não retornou resultados.')) {
-    loadingCaption.innerHTML = msg.replace(/Display:/,'');
-    setTimeout(() => {
-      popUpHelper.setSearchScreen();
-    }, 3000);
-  } else if (msg.match(/Display:/)) {
+    popUpHelper.setSearchScreenWithWarning(msg.replace(/Display:/,''));
+  } 
+  else if (msg.match(/Display:/)) {
     popUpHelper.setLoadingScreen();
     loadingCaption.innerHTML = msg.replace(/Display:/,'');
-  } else if (msg == 'Done') {
-    popUpHelper.setDoneScreen();
-  } else if (msg == 'Waiting') {
+  } 
+  else if (msg == 'Waiting') {
     popUpHelper.setWaitingScreen();
-  } else if (msg == 'WaitComplete') {
-    pesquisa.value = '';
-    popUpHelper.setSearchScreen();
+  } 
+  else if (msg == 'WaitComplete') {
+    searchQueryInput.value = '';
+    popUpHelper.setSearchScreenWithoutWarning();
   }
 });
 
@@ -140,4 +166,4 @@ popUpHelper.setWaitingScreenIfOnWait()
 popUpHelper.setLoadingScreenIfOnExecution()
 
 // Focus on the search field as soon as the user opens the popup page
-pesquisa.focus();
+searchQueryInput.focus();

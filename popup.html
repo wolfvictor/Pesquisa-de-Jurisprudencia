@@ -6,7 +6,7 @@
       #error {
         color: red;
       }
-      #espera {
+      #wait {
         text-align: center;
       }
       #loadingImage {
@@ -20,26 +20,24 @@
     </style>
   </head>
   <body>
-    <div id="divAcesso">
+    <div id="divSearchTarget">
       <a href="https://esaj.tjsp.jus.br/cjsg/consultaCompleta.do" target="_blank">Fonte: ESAJ</a>
     </div>
-    <div id="divEspera" hidden>
-      <p id="espera"><b>Espere um pouco antes de pesquisar novamente.</b></p>
+    <div id="divWait" hidden>
+      <p id="waitMessage"><b>Pronto! Espere um pouco antes de pesquisar novamente.</b></p>
     </div>
-    <div id="divPesquisa">
-      <p id="error" hidden><b>Preecha o campo abaixo.</b></p>
-      <label id="pesquisaLabel" for="pesquisa">Pesquisa Livre:</label>
-      <input id="pesquisa" type="text" required>
-      <button id="enviar" type="submit">Download</button><br>
+    <div id="divSearch">
+      <p id="errorMessage" hidden><b>Preecha o campo abaixo.</b></p>
+      <label id="searchQueryInputLabel" for="searchQueryInput">Pesquisa Livre:</label>
+      <input id="searchQueryInput" type="text" required>
+      <p id="searchWarning" hidden><b></b></p>
+      <button id="downloadButton" type="submit">Download</button><br>
     </div>
     <div id="divLoading" hidden>
       <figure id="loadingFigure">
         <figcaption id="loadingCaption">Carregando...</figcaption><br>
         <img id="loadingImage" src="/images/loading32.gif" alt="Loading icon" style="width:32px;height:32px;">
       </figure>
-    </div>
-    <div id="divDone" hidden>
-      <h1><b>Pronto!</b></h1>
     </div>
     <script src="popup.js" charset="UTF-8"></script>
   </body>
