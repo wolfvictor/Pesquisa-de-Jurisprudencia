@@ -17,21 +17,6 @@ Copyright 2022 Victor Wolf
 
 'use strict';
 
-/****************
-////VARIABLES////
-****************/
-
-let maxPages = 250;
-let totalPages = 0;
-let requestsCompleted = 0;
-let requestsParsed = 0;
-let csvFileContents = new Blob([
-  "\ufeff",
-  'Número do processo;Classe/Assunto;Relator(a);Comarca;Órgão Julgador;Data do Julgamento;Data de Publicação;Ementa\r\n'
-], {type: 'application/octet-stream'});  
-let searchQuery = '';
-let errorCount = 0;
-
 /**************
 ////CLASSES////
 **************/
@@ -42,54 +27,57 @@ class tjspWebScraper {
   }
 
   static scrapingRoutine(response) {
-    if (response) {
-      let totalHits = maxPages * 20;
-      let parsedTotalHits = response.match(/(id="nomeAba-A")(.*)(Acórdãos\()(.*)(\))(.*)/)[4]
-      try {
-        totalHits = parseInt(parsedTotalHits);
-      } catch (error) {
-        console.log('Could not parse "' + parsedTotalHits + '" into integer. ' + error + '.');
-      }
-      totalPages = Math.ceil(totalHits/20);
-    
-      if (totalHits) {
-        chrome.runtime.sendMessage('Display:Obtendo acórdãos (' + totalHits + ')...');
-      } else {
-        chrome.runtime.sendMessage('Display:A pesquisa não retornou resultados.');
-      }
-      
-      chrome.storage.sync.get('slowMode', function(data) {
-        if (data.slowMode) {
-          maxPages = 250;
-        } else {
-          maxPages = 50;
+    chrome.storage.local.get(['maxPages', 'totalPages', 'slowMode'], (chromeStorageData) => {
+      if (response) {
+        let totalHits = chromeStorageData.maxPages * 20;
+        let parsedTotalHits = response.match(/(id="nomeAba-A")(.*)(Acórdãos\()(.*)(\))(.*)/)[4];
+        try {
+          totalHits = parseInt(parsedTotalHits);
+        } catch (error) {
+          console.log('Could not parse "' + parsedTotalHits + '" into integer. ' + error + '.');
         }
-    
-        for (let index = 1; index <= Math.min(maxPages,totalPages); index++) {
-            if (data.slowMode) {
+      
+        if (totalHits) {
+          chrome.runtime.sendMessage('Display:Obtendo acórdãos (' + totalHits + ')...');
+        } else {
+          chrome.runtime.sendMessage('Display:A pesquisa não retornou resultados.');
+        }
+
+        let totalPagesCache = Math.ceil(totalHits/20);
+        let maxPagesCache = 250;
+
+        if (chromeStorageData.slowMode) {
+          maxPagesCache = 250;
+        } else {
+          maxPagesCache = 50;
+        }
+
+        chrome.storage.local.set({
+          maxPages: maxPagesCache,
+          totalPages: totalPagesCache      
+        }, () => {
+          for (let index = 1; index <= Math.min(maxPagesCache,totalPagesCache); index++) {
+            if (chromeStorageData.slowMode) {
               let currentBatchNumber = Math.ceil(index / 50);
               if (index <= 50) {
                 tjspWebScraper.fetchSubsequentResultPage(index, tjspWebScraper.parseResponse);
-              } 
-              else {
+              } else {
                 let isNewBatch = Math.ceil(index / 50) > Math.ceil((index - 1) / 50)
                 if (isNewBatch) {
                   let waitTimeInMinutes = Math.ceil(index / 50) - 1;
                   chrome.alarms.create(`SlowModeDelay${currentBatchNumber}`, { delayInMinutes: waitTimeInMinutes });
                   console.log(`Scheduled ${waitTimeInMinutes}-minute alarm for batch ${currentBatchNumber} on index ${index} due to Slow Mode.`);
                 }
-
               }
-
-          } else {
-            tjspWebScraper.fetchSubsequentResultPage(index, tjspWebScraper.parseResponse);
+            } else {
+              tjspWebScraper.fetchSubsequentResultPage(index, tjspWebScraper.parseResponse);
+            }
           }
-        }
-
-      });
-    } else {
-      searchController.cleanForNextRun();
-    }    
+        });
+      } else {
+        searchController.cleanForNextRun();
+      }    
+    });
   }
 
   static fetchFirstResultPage(searchQuery, callback) {
@@ -116,43 +104,60 @@ class tjspWebScraper {
   
     fetch(uri, {'credentials':'include'})
       .then(tjspWebScraper.handleFetchBadResponses)
-      .then(data => callback(data, downloadController.InitiateDownloadIfReady))
+      .then(data => callback(data, downloadController.initiateDownloadIfReady))
       .catch(tjspWebScraper.handleFetchExceptions);
   }
 
   static parseResponse(response, callback) {
-    requestsCompleted++;
-    let maxReached = '';
-    if (Math.min(maxPages,totalPages) == maxPages) {
-      maxReached = '(Limite)'
-    }
-    chrome.runtime.sendMessage('Display:Página ' + requestsCompleted + ' de ' + Math.min(maxPages,totalPages) + maxReached + '.');
-  
-    if (response) {
+    chrome.storage.local.get(['maxPages', 'totalPages', 'requestsCompleted'], (chromeStorageData) => {
+      
+      let requestsCompletedCache = chromeStorageData.requestsCompleted + 1;
+      chrome.storage.local.set({requestsCompleted: requestsCompletedCache});
+      
+      let effectivePageLimit = Math.min(chromeStorageData.maxPages,chromeStorageData.totalPages);
+      let maxReached = '';
+      if (effectivePageLimit == chromeStorageData.maxPages) {
+        maxReached = '(Limite)';
+      }
+      chrome.runtime.sendMessage(`Display:Página ${requestsCompletedCache} de ${effectivePageLimit}${maxReached}.`);
+    
       let parsedResponse = tjspResponseParserHelper.parseResponse(response);
-      csvFileContents = new Blob([csvFileContents, parsedResponse], {type: 'application/octet-stream'});
-    }
-  
-    requestsParsed++;
 
-    callback();
+      chrome.storage.local.get(['csvFileContents'], (chromeStorageData) => {
+        let csvFileContentsCache = `${chromeStorageData.csvFileContents}${parsedResponse}`;
+        chrome.storage.local.set({csvFileContents: csvFileContentsCache});
+
+        chrome.storage.local.get(['requestsParsed'], (chromeStorageData) => {
+          let requestsParsedCache = chromeStorageData.requestsParsed + 1;
+          console.log(requestsCompletedCache);
+          chrome.storage.local.set({
+            requestsParsed: requestsParsedCache
+          }, () => {
+            callback();
+          });
+        });  
+      });        
+    });
   }
 
   static handleFetchBadResponses(response) {
     if (response.ok) {
       return response.text();
     } else {
-      chrome.runtime.sendMessage(`Display:A conexão falhou ('${response.status}').`);
-      errorCount++;
-      return null;
+      chrome.storage.local.get('errorCount', (chromeStorageData) => {
+        chrome.runtime.sendMessage(`Display:A conexão falhou ('${response.status}').`);
+        chrome.storage.local.set({errorCount: chromeStorageData.errorCount + 1});
+        return null;      
+      });
     }
   }
 
   static handleFetchExceptions(error) {
-    chrome.runtime.sendMessage(`Display:A conexão falhou. ${error}`);
-    errorCount++;
+    chrome.storage.local.get('errorCount', (chromeStorageData) => {
+      chrome.runtime.sendMessage(`Display:A conexão falhou. ${error}`);
+      chrome.storage.local.set({errorCount: chromeStorageData.errorCount + 1});
+    });
   }
-  
 }
 
 class tjspResponseParserHelper {
@@ -162,7 +167,7 @@ class tjspResponseParserHelper {
     let HTML_Response = document.createElement('html');
     HTML_Response.innerHTML = response;
 
-    let parsedData = new Blob([], {type: 'application/octet-stream'});
+    let parsedData = '';
 
     let HTML_ElementsToParse = HTML_Response.getElementsByClassName('fundocinza1');
       
@@ -182,17 +187,15 @@ class tjspResponseParserHelper {
       let dataPublicacao = tjspResponseParserHelper.extractDataPublicacao(HTML_ElementToParse, id);
       let ementa = tjspResponseParserHelper.extractEmenta(HTML_ElementToParse, id);
   
-      parsedData = new Blob([
-        parsedData,
-        numeroProcesso,
-        classe,
-        relator,
-        comarca,
-        orgaoJulgador,
-        dataJulgamento,
-        dataPublicacao,
-        ementa
-      ], {type: 'application/octet-stream'});   
+      parsedData = parsedData +
+        numeroProcesso +
+        classe +
+        relator +
+        comarca +
+        orgaoJulgador +
+        dataJulgamento +
+        dataPublicacao +
+        ementa;
     }
     
     return parsedData;
@@ -341,41 +344,51 @@ class tjspResponseParserHelper {
 
 class searchController {
   static cleanForNextRun() {
-    requestsCompleted = 0;
-    requestsParsed = 0;
-    errorCount = 0;
-    chrome.storage.sync.set({onExecution: false}, function() {});
-    chrome.storage.sync.set({onWait: true}, function() {
+    chrome.storage.local.set({
+      onWait: true, 
+      onExecution: false,
+      requestsCompleted: 0,
+      requestsParsed: 0,
+      errorCount: 0,
+      searchQuery: '',
+      csvFileContents: '\ufeffNúmero do processo;Classe/Assunto;Relator(a);Comarca;Órgão Julgador;Data do Julgamento;Data de Publicação;Ementa\r\n'
+    }, () => {
       let waitTimeInMinutes = 1;
       chrome.alarms.create("WaitForNextRun", { delayInMinutes: waitTimeInMinutes });
       chrome.runtime.sendMessage('Waiting');
 
       // Bug fix #2: sets a datetime to confirm wait mode
-      chrome.storage.sync.set({lastWaitEnd: Date.now() + waitTimeInMinutes * 60 * 1000 }, function() {}); 
+      chrome.storage.local.set({lastWaitEnd: Date.now() + waitTimeInMinutes * 60 * 1000 }); 
     });     
   }
 }
 
 class downloadController {
-  static InitiateDownloadIfReady() {
-    if (requestsParsed >= Math.min(maxPages,totalPages)) {
-      if (errorCount) {
-        console.log('Não foi possível obter ' + errorCount + ' das ' + Math.min(maxPages,totalPages) + ' páginas de resultados. O arquivo está incompleto.');
+  static initiateDownloadIfReady() {
+    chrome.storage.local.get(['maxPages', 'totalPages', 'requestsParsed', 'errorCount'], (chromeStorageData) => {
+      let effectivePageLimit = Math.min(chromeStorageData.maxPages,chromeStorageData.totalPages);
+      if (chromeStorageData.requestsParsed >= effectivePageLimit) {
+        if (chromeStorageData.errorCount) {
+          console.log(`Não foi possível obter ${chromeStorageData.errorCount} das ${effectivePageLimit} páginas de resultados. O arquivo está incompleto.`);
+        }
+        downloadController.downloadFile();
+        searchController.cleanForNextRun();
       }
-      downloadController.downloadFile();
-      searchController.cleanForNextRun();
-    }
+    });
   }
 
   static downloadFile() {
-    let csvFileURL = URL.createObjectURL(csvFileContents);
-    var currentdate = new Date();
-    var filename = currentdate.getFullYear() + '-' + ("0" + (currentdate.getMonth() + 1)).slice(-2) + '-' + ("0" + (currentdate.getDate())).slice(-2) + '-'
-      + currentdate.getHours() + currentdate.getMinutes() + currentdate.getSeconds() + ('' + currentdate.getMilliseconds()).slice(0, 1) + '-'
-      + encodeURIComponent(searchQuery) + '.csv';
-    chrome.downloads.download({
-      url: csvFileURL,
-      filename: filename
+    chrome.storage.local.get(['searchQuery', 'csvFileContents'], (chromeStorageData) => {
+      let csvFileBlob = new Blob([chromeStorageData.csvFileContents], {type: 'text/csv'});
+      let csvFileURL = URL.createObjectURL(csvFileBlob);
+      var currentdate = new Date();
+      var filename = currentdate.getFullYear() + '-' + ("0" + (currentdate.getMonth() + 1)).slice(-2) + '-' + ("0" + (currentdate.getDate())).slice(-2) + '-'
+        + currentdate.getHours() + currentdate.getMinutes() + currentdate.getSeconds() + ('' + currentdate.getMilliseconds()).slice(0, 1) + '-'
+        + encodeURIComponent(chromeStorageData.searchQuery) + '.csv';
+      chrome.downloads.download({
+        url: csvFileURL,
+        filename: filename
+      });
     });
   }
 }
@@ -385,31 +398,58 @@ class downloadController {
 ***********/
 
 // Initializing the Extension
-chrome.runtime.onInstalled.addListener(function() {
-  chrome.storage.sync.set({slowMode: false, onWait: false, onExecution: false, lastWaitEnd: Date.UTC(0,0)}, function() {});
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.storage.local.set({
+    slowMode: false,
+    onWait: false,
+    onExecution: false,
+    lastWaitEnd: Date.UTC(0,0),
+    maxPages: 250,
+    totalPages: 0,
+    requestsCompleted: 0,
+    requestsParsed: 0,
+    errorCount: 0,
+    searchQuery: '',
+    csvFileContents: '\ufeffNúmero do processo;Classe/Assunto;Relator(a);Comarca;Órgão Julgador;Data do Julgamento;Data de Publicação;Ementa\r\n'
+  });
 });
 
 // Reset options and modes to default on Startup
-chrome.runtime.onStartup.addListener(function() {
-  chrome.storage.sync.set({slowMode: false, onWait: false, onExecution: false, lastWaitEnd: Date.UTC(0,0)}, function() {});
+chrome.runtime.onStartup.addListener(() => {
+  chrome.storage.local.set({
+    slowMode: false,
+    onWait: false,
+    onExecution: false,
+    lastWaitEnd: Date.UTC(0,0),
+    maxPages: 250,
+    totalPages: 0,
+    requestsCompleted: 0,
+    requestsParsed: 0,
+    errorCount: 0,
+    searchQuery: '',
+    csvFileContents: '\ufeffNúmero do processo;Classe/Assunto;Relator(a);Comarca;Órgão Julgador;Data do Julgamento;Data de Publicação;Ementa\r\n'
+  });
 });
 
 // Receives message with search content and performs first connection to the site
-chrome.runtime.onMessage.addListener(function(msg) {
+chrome.runtime.onMessage.addListener((msg) => {
   if (msg.match(/Search:/)) {
-    chrome.storage.sync.set({onExecution: true}, function() {
+    chrome.storage.local.set({onExecution: true}, () => {
       chrome.runtime.sendMessage('Executing');
     });
-    searchQuery = msg.replace(/Search:/,'');
+
+    let searchQueryCache = msg.replace(/Search:/,'');
     chrome.runtime.sendMessage('Display:Conectando...');
 
-    tjspWebScraper.startScraping(searchQuery);
+    chrome.storage.local.set({searchQuery: searchQueryCache}, () => {
+      tjspWebScraper.startScraping(searchQueryCache);  
+    });
   }
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name == "WaitForNextRun") {
-    chrome.storage.sync.set({onWait: false}, function() { 
+    chrome.storage.local.set({onWait: false}, () => { 
       chrome.runtime.sendMessage('WaitComplete');
     });
   }
