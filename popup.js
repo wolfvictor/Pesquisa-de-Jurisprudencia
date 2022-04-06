@@ -62,7 +62,7 @@ class popUpHelper {
   }
 
   static setWaitingScreenWithWaitTime() {
-    chrome.storage.sync.get('lastWaitEnd', function(data) {
+    chrome.storage.local.get('lastWaitEnd', (data) => {
       divSearchTarget.setAttribute("hidden", true);
       divSearch.setAttribute("hidden", true);
       divLoading.setAttribute("hidden", true);
@@ -90,16 +90,16 @@ class popUpHelper {
   }
 
   static setWaitingScreenIfOnWait() {
-    chrome.storage.sync.get('onWait', function(data) {
+    chrome.storage.local.get('onWait', (data) => {
       if (data.onWait) {
         // Bug fix #2: resets wait mode if it was not correctly reset
-        chrome.storage.sync.get('lastWaitEnd', function(data) {
+        chrome.storage.local.get('lastWaitEnd', (data) => {
           if (data.lastWaitEnd > Date.now()) {
             console.log(`Wait mode is active. Please wait until ${data.lastWaitEnd}. Date Now: ${Date.now()}.`);
             popUpHelper.setWaitingScreen();
           } else {
             console.log(`Resetting onWait because it was incorrectly set. Date Wait Mode ended: ${data.lastWaitEnd}. Date Now: ${Date.now()}.`);
-            chrome.storage.sync.set({onWait: false}, function() {}); 
+            chrome.storage.local.set({onWait: false}); 
           }
         });
       }
@@ -107,9 +107,9 @@ class popUpHelper {
   }
 
   static setLoadingScreenIfOnExecution() {
-    chrome.storage.sync.get('onExecution', function(data) {
+    chrome.storage.local.get('onExecution', (data) => {
       if (data.onExecution) {
-        chrome.storage.sync.get('slowMode', function(data) {
+        chrome.storage.local.get('slowMode', (data) => {
           if (data.slowMode) {
                 popUpHelper.setLoadingScreenForSlowMode();
           }
@@ -127,7 +127,7 @@ class popUpHelper {
 ***********/
 
 // When button is pressed, send the search query to the background script
-downloadButton.onclick = function (element) {
+downloadButton.onclick = () => {
   if (searchQueryInput.value) {
     chrome.runtime.sendMessage('Search:' + searchQueryInput.value);
     popUpHelper.setLoadingScreen();
@@ -137,7 +137,7 @@ downloadButton.onclick = function (element) {
 };
 
 // Enter on search field should also act as if button has been pressed
-searchQueryInput.addEventListener("keyup", function(event) {
+searchQueryInput.addEventListener("keyup", (event) => {
   if (event.key === 'Enter') {
     event.preventDefault();
     downloadButton.click();
@@ -145,7 +145,7 @@ searchQueryInput.addEventListener("keyup", function(event) {
 });
 
 // Display messages to the user according to the current background step
-chrome.runtime.onMessage.addListener(function(msg) {
+chrome.runtime.onMessage.addListener((msg) => {
   if (msg.match('Display:A pesquisa não retornou resultados.')) {
     popUpHelper.setSearchScreenWithWarning(msg.replace(/Display:/,''));
   } 

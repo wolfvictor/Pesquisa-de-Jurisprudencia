@@ -31,8 +31,8 @@ let checkboxInput = document.getElementById('checkboxInput');
 
 class optionsHelper {
   static isModeChangeAllowed(callback) {
-    chrome.storage.sync.get('onExecution', execution => {
-      chrome.storage.sync.get('onWait', wait => {
+    chrome.storage.local.get('onExecution', execution => {
+      chrome.storage.local.get('onWait', wait => {
         if (!wait.onWait && !execution.onExecution) {
           callback(true);
         } else {
@@ -43,7 +43,7 @@ class optionsHelper {
   }
 
   static getMode(callback) {
-    chrome.storage.sync.get('slowMode', data => callback(data.slowMode));
+    chrome.storage.local.get('slowMode', data => callback(data.slowMode));
   }
   
   static setWaitingScreenIfChangeNotAllowed(condition) {
@@ -74,9 +74,9 @@ class optionsHelper {
 
   static toggleMode(condition) {
     if (condition) {
-      chrome.storage.sync.set({ slowMode: false }, optionsHelper.UpdateScreen);
+      chrome.storage.local.set({ slowMode: false }, optionsHelper.UpdateScreen);
     } else {
-      chrome.storage.sync.set({ slowMode: true }, optionsHelper.UpdateScreen);
+      chrome.storage.local.set({ slowMode: true }, optionsHelper.UpdateScreen);
     }
     console.log('Mode toggled to ' + !condition);
   }
@@ -88,12 +88,12 @@ class optionsHelper {
 ***********/
 
 // Sets actions to follow a checkbox click
-checkboxInput.onclick = function() {
+checkboxInput.onclick = () => {
   optionsHelper.isModeChangeAllowed(optionsHelper.setModeIfTrue);  
 }
 
 // Changes the screen depending on the message received
-chrome.runtime.onMessage.addListener(function(msg) {
+chrome.runtime.onMessage.addListener((msg) => {
   if (msg == 'Executing') {
     divOptions.setAttribute("hidden", true);
     divWait.removeAttribute("hidden");
