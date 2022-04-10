@@ -60,10 +60,11 @@ class optionsHelper {
   static async toggleSlowMode() {
     let chromeStorageData = await chrome.storage.local.get('slowMode');
 
-    chrome.storage.local.set({ slowMode: !chromeStorageData.slowMode } );
+    chrome.storage.local.set({ slowMode: !chromeStorageData.slowMode }, () => {
+      console.log('Mode toggled to ' + !chromeStorageData.slowMode);
+    });
     
     optionsHelper.UpdateScreen;
-    console.log('Mode toggled to ' + !condition);
   }
 
 }
