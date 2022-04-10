@@ -1,15 +1,14 @@
 {
   "name": "Pesquisa de Jurisprudência",
-  "version": "0.0.0.4",
+  "version": "1.0.0",
   "description": "Obtenha um arquivo csv com informações de jurisprudência",
   "homepage_url": "https://github.com/wolfvictor/Pesquisa-de-Jurisprudencia",
-  "permissions": ["storage", "downloads", "https://esaj.tjsp.jus.br/"],
+  "permissions": ["storage", "downloads", "tabs", "alarms"],
+  "host_permissions": ["https://esaj.tjsp.jus.br/*"],
   "background": {
-    "scripts": ["background.js"],
-    "persistent": false
+    "service_worker": "background.js"
   },
-  "browser_action": {
-    "default_popup": "popup.html",
+  "action": {
     "default_icon": {
       "16": "images/gavel16.png",
       "32": "images/gavel32.png",
@@ -24,5 +23,5 @@
     "48": "images/gavel48.png",
     "128": "images/gavel128.png"
   },
-  "manifest_version": 2
+  "manifest_version": 3
 }

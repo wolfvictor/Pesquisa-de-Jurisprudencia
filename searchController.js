@@ -17,22 +17,28 @@ Copyright 2022 Victor Wolf
 
 'use strict';
 
-/***********
-////MAIN////
-***********/
+class searchController {
+  static cleanForNextRun() {
+    requestsCompleted = 0;
+    requestsParsed = 0;
+    errorCount = 0;
+    searchQueryInput.value = '';
+    chrome.storage.local.set({onExecution: false});       
+  }
 
-// Initializing the Extension
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.set({slowMode: false, onWait: false, onExecution: false, waitEndTime: Date.UTC(0,0)});
-});
+  static setWaitForNextRun(message) {
+    chrome.storage.local.set({onWait: true}, () => {
+      let waitTimeInMinutes = 1;
+      chrome.alarms.create("WaitForNextRun", { delayInMinutes: waitTimeInMinutes });
 
-// Reset options and modes to default on Startup
-chrome.runtime.onStartup.addListener(() => {
-  chrome.storage.local.set({slowMode: false, onWait: false, onExecution: false, waitEndTime: Date.UTC(0,0)});
-});
+      if (message) {
+        tabHelper.setWaitingScreenWithWaitTimeAndMessage(waitTimeInMinutes * 60, message);
+      } else {
+        tabHelper.setWaitingScreenWithWaitTime(waitTimeInMinutes * 60);
+      }
 
-chrome.action.onClicked.addListener(() => {
-  chrome.tabs.create({
-    url: 'tab.html'
-  });
-});
+      // Bug fix #2: sets a datetime to confirm wait mode
+      chrome.storage.local.set({waitEndTime: Date.now() + waitTimeInMinutes * 60 * 1000 }); 
+    });
+  }
+}

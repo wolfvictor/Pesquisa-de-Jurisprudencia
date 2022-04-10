@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+  <meta charset="UTF-8">
+  <head>
+    <style>
+      .wrapper {
+        display: grid;
+        grid-template-columns: 180px 180px;
+        gap: 4px;
+        grid-auto-rows: minmax(20px, auto);
+        font-family: Arial;
+        font-size: 14px;
+      }
+      .top {
+        grid-column: 1;
+        grid-row: 1;
+      }
+      .content {
+        grid-column: 1;
+        grid-row: 2;
+      }
+      .bottom {
+        grid-column: 1;
+        grid-row: 3;
+      }
+      .loading {
+        max-width: 100%;
+      }
+      .wait {
+        text-align: center;
+        text-justify: auto;
+      }
+      #error {
+        color: red;
+      }
+      #loadingFigure {
+        margin: 0px;
+      }
+      #loadingImage {
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+        width: 32px;
+        height: 32px;
+      }
+      #loadingCaption {
+        text-align: center;
+        text-justify: auto;
+      }
+      #searchQueryInput {
+        box-sizing: border-box;
+        width: 100%;
+        font-family: Arial;
+        font-size: 14px;
+      }
+      #searchWarning {
+        margin: 2px;
+      }
+      #downloadButton {
+        margin-right: 0px;
+        margin-left: auto;
+        margin-top: 2px;
+        display: block;
+        font-family: Arial;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="top" id="divSearchTarget" hidden>
+        <a href="https://esaj.tjsp.jus.br/cjsg/consultaCompleta.do" target="_blank">Fonte: ESAJ</a>
+      </div>
+      <div class="top wait" id="divWait" hidden>
+        <p class="wait" id="waitMessage"><b>Espere um pouco antes de pesquisar novamente.</b></p>
+      </div>
+      <div class="top loading" id="divLoading">
+        <figure id="loadingFigure">
+          <figcaption id="loadingCaption">Carregando...</figcaption><br>
+          <img id="loadingImage" src="/images/loading32.gif" alt="Loading icon">
+        </figure>
+      </div>
+      <div class="content search" id="divSearch" hidden>
+        <p id="errorMessage" hidden><b>Preecha o campo abaixo.</b></p>
+        <label id="searchQueryInputLabel" for="searchQueryInput">Pesquisa Livre:</label>
+        <input id="searchQueryInput" type="text" required>
+        <button id="downloadButton" type="submit">Download</button>
+        <p id="searchWarning" hidden><b></b></p>
+      </div>
+    </div>
+    <script src="downloadController.js" charset="UTF-8"></script>
+    <script src="searchController.js" charset="UTF-8"></script>
+    <script src="tjspResponseParserHelper.js" charset="UTF-8"></script>
+    <script src="tjspWebScraper.js" charset="UTF-8"></script>
+    <script src="tabHelper.js" charset="UTF-8"></script>
+    <script src="tab.js" charset="UTF-8"></script>
+  </body>
+</html>

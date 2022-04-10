@@ -22,87 +22,35 @@ Copyright 2022 Victor Wolf
 ****************/
 
 let divOptions = document.getElementById('divOptions');
-let divEspera = document.getElementById('divEspera');
-let checkboxInput = document.getElementById('checkboxInput');
-
-/**************
-////CLASSES////
-**************/
-
-class optionsHelper {
-  static isModeChangeAllowed(callback) {
-    chrome.storage.sync.get('onExecution', execution => {
-      chrome.storage.sync.get('onWait', wait => {
-        if (!wait.onWait && !execution.onExecution) {
-          callback(true);
-        } else {
-          callback(false);
-        }
-      });
-    });
-  }
-
-  static getMode(callback) {
-    chrome.storage.sync.get('slowMode', data => callback(data.slowMode));
-  }
-  
-  static setWaitingScreenIfChangeNotAllowed(condition) {
-    if (!condition) {
-      divOptions.setAttribute("hidden", true);
-      divEspera.removeAttribute("hidden");
-    }
-  }
-
-  static checkTheBoxWhenOptionIsEnabled(condition) {
-    if (condition) {
-      checkboxInput.checked = true;
-    } else {
-      checkboxInput.checked = false;
-    }
-  }
-
-  static UpdateScreen() {
-    optionsHelper.isModeChangeAllowed(optionsHelper.setWaitingScreenIfChangeNotAllowed);
-    optionsHelper.getMode(optionsHelper.checkTheBoxWhenOptionIsEnabled);
-  }
-
-  static setModeIfTrue(condition) {
-    if (condition) {
-      optionsHelper.getMode(optionsHelper.toggleMode);
-    }
-  }
-
-  static toggleMode(condition) {
-    if (condition) {
-      chrome.storage.sync.set({ slowMode: false }, optionsHelper.UpdateScreen);
-    } else {
-      chrome.storage.sync.set({ slowMode: true }, optionsHelper.UpdateScreen);
-    }
-    console.log('Mode toggled to ' + !condition);
-  }
-
-}
+let divWait = document.getElementById('divWait');
+let slowModeCheckboxInput = document.getElementById('slowModeCheckboxInput');
+let waitMessage = document.getElementById('waitMessage');
 
 /***********
 ////MAIN////
 ***********/
 
 // Sets actions to follow a checkbox click
-checkboxInput.onclick = function() {
-  optionsHelper.isModeChangeAllowed(optionsHelper.setModeIfTrue);  
+slowModeCheckboxInput.onclick = async () => {
+  let modeChangeAllowed = await optionsHelper.isModeChangeAllowed();
+  if (modeChangeAllowed) {
+    optionsHelper.toggleSlowMode();
+  } else {
+    optionsHelper.setWaitingScreen();
+  }
 }
 
 // Changes the screen depending on the message received
-chrome.runtime.onMessage.addListener(function(msg) {
+chrome.runtime.onMessage.addListener((msg) => {
   if (msg == 'Executing') {
     divOptions.setAttribute("hidden", true);
-    divEspera.removeAttribute("hidden");
+    divWait.removeAttribute("hidden");
   } else if (msg == 'Waiting') {
     divOptions.setAttribute("hidden", true);
-    divEspera.removeAttribute("hidden");
+    divWait.removeAttribute("hidden");
   } else if (msg == 'WaitComplete') {
     divOptions.removeAttribute("hidden");
-    divEspera.setAttribute("hidden", true);
+    divWait.setAttribute("hidden", true);
   }
 });
 
